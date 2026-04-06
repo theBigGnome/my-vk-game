@@ -1,6 +1,20 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+    <!-- 1. Подключаем саму библиотеку VK Bridge -->
+<script src="https://unpkg.com"></script>
+
+<script>
+  // 2. Инициализируем её сразу после загрузки страницы
+  vkBridge.send("VKWebAppInit", {})
+    .then(data => {
+      console.log("VK Bridge инициализирован успешно");
+    })
+    .catch(error => {
+      console.error("Ошибка при инициализации:", error);
+    });
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Match 3 Evolution VK</title>
