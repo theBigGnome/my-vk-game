@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Match 3 Evolution VK</title>
-    <!-- Используем надежную версию моста -->
+    <!-- Используем надежный CDN для VK Bridge -->
     <script src="https://unpkg.com"></script>
     <style>
         :root { --cell-size: 55px; }
@@ -34,33 +34,38 @@
 <div class="game-container">
     <div class="stats">
         <div style="font-size: 24px; margin-bottom: 10px;">Счет: <b id="score">0</b></div>
-        <button onclick="location.reload()" style="background:#333; border:1px solid #444; color:#ccc; padding:6px 12px; border-radius:5px; font-size:12px;">РЕСТАРТ</button>
+        <button onclick="location.reload()" style="background:#333; border:1px solid #444; color:#ccc; padding:6px 12px; border-radius:5px; font-size:12px; cursor:pointer;">РЕСТАРТ</button>
     </div>
     <div id="grid"></div>
 </div>
 
 <script>
-    // Инициализация моста СРАЗУ
+    // 1. БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ VK BRIDGE
     const bridge = window.vkBridge;
-    bridge.send("VKWebAppInit").then(() => {
-        console.log("VK Init Success");
-        bridge.send("VKWebAppSetViewSettings", {"status_bar_style": "light"});
-    }).catch(e => console.log("Not in VK"));
+    if (bridge) {
+        bridge.send("VKWebAppInit")
+            .then(() => {
+                console.log("VK Bridge Initialized");
+                bridge.send("VKWebAppSetViewSettings", {"status_bar_style": "light"});
+            })
+            .catch(err => console.error("VK Init Error", err));
+    }
 
     const SIZE = 8, COLORS = 5;
     let gridData = [], cells = [], score = 0, selected = null, busy = false;
-    
-    // Звуковой контекст (создаем лениво)
     let audioCtx = null;
 
+    // Звук заработает после первого клика (требование браузеров)
     function playSnd(f) {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-        o.type = 'sine'; o.connect(g); g.connect(audioCtx.destination);
-        o.frequency.setValueAtTime(f, audioCtx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-        o.start(); o.stop(audioCtx.currentTime + 0.2);
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.type = 'sine'; o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            o.start(); o.stop(audioCtx.currentTime + 0.2);
+        } catch(e) {}
     }
 
     function startGame() {
@@ -102,7 +107,8 @@
             selected = idx;
             cells[idx].classList.add('selected');
             playSnd(600);
-            bridge.send("VKWebAppTapticSelectionChanged").catch(() => {});
+            // Вибрация через мост
+            if(bridge) bridge.send("VKWebAppTapticSelectionChanged").catch(()=>{});
         } else {
             let id1 = selected, id2 = idx;
             let isAdj = [1, -1, SIZE, -SIZE].includes(id1 - id2) && 
@@ -117,19 +123,28 @@
                     setTimeout(() => { swap(id1, id2); render(); busy = false; }, 300);
                 } else {
                     render();
-                    bridge.send("VKWebAppTapticNotificationOccurred", {"type": "success"}).catch(() => {});
+                    if(bridge) bridge.send("VKWebAppTapticNotificationOccurred", {"type": "success"}).catch(()=>{});
                 }
+            } else {
+                // Если кликнули не рядом, просто выбираем новую ячейку
+                selected = idx;
+                cells[idx].classList.add('selected');
+                playSnd(600);
+                return;
             }
             selected = null;
         }
     }
 
     function swap(i1, i2) {
-        [gridData[i1], gridData[i2]] = [gridData[i2], gridData[i1]];
+        let temp = gridData[i1];
+        gridData[i1] = gridData[i2];
+        gridData[i2] = temp;
     }
 
     function checkMatches() {
         let del = new Set();
+        // По горизонтали
         for (let r = 0; r < SIZE; r++) {
             for (let c = 0; c < SIZE - 2; c++) {
                 let i = r * SIZE + c;
@@ -138,6 +153,7 @@
                 }
             }
         }
+        // По вертикали
         for (let c = 0; c < SIZE; c++) {
             for (let r = 0; r < SIZE - 2; r++) {
                 let i = r * SIZE + c;
